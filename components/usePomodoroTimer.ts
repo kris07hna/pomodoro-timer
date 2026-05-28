@@ -67,25 +67,42 @@ export function usePomodoroTimer() {
   };
 
   const playCue = () => {
+    const playOsc = () => {
+      try {
+        const win = window as unknown as { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext };
+        const CtxClass = win.AudioContext ?? win.webkitAudioContext ?? AudioContext;
+        const ctx = audioCtxRef.current ?? new CtxClass();
+        audioCtxRef.current = ctx;
+        if (typeof ctx.resume === "function" && ctx.state === "suspended") ctx.resume().catch(() => {});
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.frequency.value = 880;
+        gain.gain.value = 0.12;
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        setTimeout(() => { try { osc.stop(); } catch {} }, 180);
+      } catch {}
+    };
+
     const audio = audioRef.current;
     if (audio) {
-      audio.currentTime = 0;
-      audio.play().catch(() => {});
-      if (cueTimeoutRef.current) clearTimeout(cueTimeoutRef.current);
-      cueTimeoutRef.current = setTimeout(() => { audio.pause(); audio.currentTime = 0; }, 2000);
-      return;
+      try {
+        audio.currentTime = 0;
+        const p = audio.play();
+        if (p && typeof p.then === "function") {
+          p.catch(() => playOsc());
+        }
+        if (cueTimeoutRef.current) clearTimeout(cueTimeoutRef.current);
+        cueTimeoutRef.current = setTimeout(() => { try { audio.pause(); audio.currentTime = 0; } catch {} }, 2000);
+        return;
+      } catch {
+        playOsc();
+        return;
+      }
     }
-    try {
-      const ctx = audioCtxRef.current!;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.frequency.value = 880;
-      gain.gain.value = 0.12;
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      setTimeout(() => osc.stop(), 180);
-    } catch {}
+
+    playOsc();
   };
 
   const finishCycle = () => {
@@ -105,8 +122,8 @@ export function usePomodoroTimer() {
 
     if (mode === "break" && lastBreakRef.current) {
       lastBreakRef.current = false;
-      // Use the shared reset logic to ensure consistent state cleanup
-      reset();
+      // Reset without clearing the completed message so we can show it immediately
+      reset(false);
       setCompletedMessage("Successfully completed all cycles!");
       // Try to notify the user via the Notifications API
       try {
@@ -161,11 +178,11 @@ export function usePomodoroTimer() {
     persist({ running: false, timeLeft: Math.ceil(remainingMs / 1000), endAt: null });
   };
 
-  const reset = () => {
+  const reset = (clearMessage = true) => {
     clearTimer();
     endRef.current = null;
     cycleHandledRef.current = false;
-    setCompletedMessage("");
+    if (clearMessage) setCompletedMessage("");
     setMode("focus");
     setStarted(false);
     setRunning(false);
