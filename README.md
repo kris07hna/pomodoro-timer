@@ -2,7 +2,10 @@
 
 Minimal Next.js Pomodoro timer with UI and history.
 
-![Pomodoro screenshot](./public/public/Screenshot 2026-05-28 143844.png)
+**Live:** [pomodoro-timer-hazel-iota.vercel.app](https://pomodoro-timer-hazel-iota.vercel.app/)
+**Repo:** [github.com/kris07hna/pomodoro-timer](https://github.com/kris07hna/pomodoro-timer)
+
+![Pomodoro screenshot](./public/screenshot.png)
 
 Quick start:
 
