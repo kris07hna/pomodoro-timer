@@ -36,7 +36,7 @@ type Props = {
 
 export default function Settings({ focusM, breakM, cyclesTarget, setFocusM, setBreakM, setCyclesTarget }: Props) {
   return (
-    <div className="glass-card settings-card" style={{ maxWidth: "100%" }}>
+    <div className="glass-card" style={{ maxWidth: "100%" }}>
       <div className="audiowide-regular" style={{ fontWeight: 400, marginBottom: 12 }}>Settings</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <SettingRow label="Focus" value={focusM} unit="min" min={1} max={180} setter={setFocusM} />

@@ -1,5 +1,3 @@
-export const now = () => Date.now();
-
 export const formatTime = (seconds: number) => {
   const safe = Math.max(0, seconds);
   const m = Math.floor(safe / 60);

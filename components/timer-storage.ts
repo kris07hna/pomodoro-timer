@@ -26,18 +26,11 @@ export const loadHistory = (): SessionEntry[] => {
   if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(HISTORY_KEY);
-    if (!raw) {
-      localStorage.setItem(HISTORY_KEY, JSON.stringify({ date: todayKey(), sessions: [] }));
-      return [];
-    }
+    if (!raw) return [];
     const parsed = JSON.parse(raw) as { date?: string; sessions?: SessionEntry[] };
-    if (parsed.date !== todayKey()) {
-      localStorage.setItem(HISTORY_KEY, JSON.stringify({ date: todayKey(), sessions: [] }));
-      return [];
-    }
+    if (parsed.date !== todayKey()) return [];
     return Array.isArray(parsed.sessions) ? parsed.sessions : [];
   } catch {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify({ date: todayKey(), sessions: [] }));
     return [];
   }
 };

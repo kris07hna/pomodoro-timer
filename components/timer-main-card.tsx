@@ -12,6 +12,7 @@ type Props = {
   displayFraction: string;
   cyclesTarget: number;
   cyclesRemaining: number;
+  completedMessage: string;
   onStartOrResume: () => void;
   onPause: () => void;
   onReset: () => void;
@@ -26,6 +27,7 @@ export default function TimerMainCard({
   displayFraction,
   cyclesTarget,
   cyclesRemaining,
+  completedMessage,
   onStartOrResume,
   onPause,
   onReset,
@@ -40,9 +42,14 @@ export default function TimerMainCard({
     <div className={`glass-card session-main ${mode === "focus" ? "focus" : "break"}${started && !running ? " paused" : ""}`}>
       <div className="status-header">
         <div className="audiowide-regular timer-label glossy-status">{statusLabel}</div>
-        <div className="cycle-meter" aria-label="Cycle meter">
+        <div className="cycle-meter" role="group" aria-label="Cycle meter">
           {Array.from({ length: cyclesTarget }, (_, i) => (
-            <span key={i} className={`meter-dot ${i < cyclesRemaining ? "on" : "off"}`} />
+            <span
+              key={i}
+              className={`meter-dot ${i < cyclesRemaining ? "on" : "off"}`}
+              role="img"
+              aria-label={`Cycle ${i + 1} of ${cyclesTarget}: ${i < cyclesRemaining ? "completed" : "pending"}`}
+            />
           ))}
         </div>
       </div>
@@ -56,6 +63,12 @@ export default function TimerMainCard({
         <button onClick={action.onClick} style={buttonStyle} aria-label={action.ariaLabel}>{action.label}</button>
         <button onClick={onReset} style={{ ...buttonStyle, background: "#374151" }} aria-label="Reset timer">Reset</button>
       </div>
+
+      {completedMessage && (
+        <div className="completion-toast" role="status" aria-live="polite">
+          {completedMessage}
+        </div>
+      )}
 
       <div style={{ marginTop: 10, opacity: 0.86, fontSize: 13, textAlign: "center" }}>
         Space = start/pause/resume, R = reset

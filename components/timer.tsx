@@ -11,6 +11,7 @@ export default function Timer() {
 
   return (
     <div className="session-shell">
+      {t.flashActive && <div className="flash-overlay" />}
       <div className="session-row">
         <TimerMainCard
           mode={t.mode}
@@ -21,6 +22,7 @@ export default function Timer() {
           displayFraction={t.displayFraction}
           cyclesTarget={t.cyclesTarget}
           cyclesRemaining={t.cyclesRemaining}
+          completedMessage={t.completedMessage}
           onStartOrResume={t.startOrResume}
           onPause={t.pause}
           onReset={t.reset}

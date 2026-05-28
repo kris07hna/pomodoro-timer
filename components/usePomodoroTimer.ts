@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { formatDateTimeWithZone, now } from "./timer-format";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { formatDateTimeWithZone } from "./timer-format";
 import { ActiveState, loadActive, loadHistory, Mode, saveActive, saveHistory, SessionEntry } from "./timer-storage";
 
 const AUDIO_FILE = "/mixkit-digital-clock-digital-alarm-buzzer-992.wav";
 const FLASH_MS = 4000;
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
+const now = () => new Date().getTime();
 
 export function usePomodoroTimer() {
   const [focusM, setFocusM] = useState(25);
@@ -20,15 +21,24 @@ export function usePomodoroTimer() {
   const [fractional, setFractional] = useState("0.00");
   const [history, setHistory] = useState<SessionEntry[]>([]);
   const [currentDateTime, setCurrentDateTime] = useState("");
+  const [flashActive, setFlashActive] = useState(false);
+  const [completedMessage, setCompletedMessage] = useState("");
 
   const endRef = useRef<number | null>(null);
   const intRef = useRef<number | null>(null);
-  const handledEndRef = useRef<number | null>(null);
+  const cycleHandledRef = useRef(false);
   const flashTimeoutRef = useRef<number | null>(null);
   const restoredRef = useRef(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
   const finishCycleRef = useRef<() => void>(() => {});
   const lastBreakRef = useRef(false);
+  const cueTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startOrResumeRef = useRef<() => void>(() => {});
+  const pauseRef = useRef<() => void>(() => {});
+  const resetRef = useRef<() => void>(() => {});
+  const persistRef = useRef<(override?: Partial<ActiveState>) => void>(() => {});
+  const onKeyRef = useRef<(e: KeyboardEvent) => void>(() => {});
 
   const clearTimer = () => {
     if (intRef.current) clearInterval(intRef.current);
@@ -48,15 +58,13 @@ export function usePomodoroTimer() {
   };
 
   const flashBlue = () => {
-    document.body.classList.add("flash-invert");
+    setFlashActive(true);
     if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current);
     flashTimeoutRef.current = window.setTimeout(() => {
-      document.body.classList.remove("flash-invert");
+      setFlashActive(false);
       flashTimeoutRef.current = null;
     }, FLASH_MS);
   };
-
-  const cueTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const playCue = () => {
     const audio = audioRef.current;
@@ -68,7 +76,7 @@ export function usePomodoroTimer() {
       return;
     }
     try {
-      const ctx = new AudioContext();
+      const ctx = audioCtxRef.current!;
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.frequency.value = 880;
@@ -81,9 +89,8 @@ export function usePomodoroTimer() {
   };
 
   const finishCycle = () => {
-    const endAt = endRef.current;
-    if (!endAt || handledEndRef.current === endAt) return;
-    handledEndRef.current = endAt;
+    if (cycleHandledRef.current) return;
+    cycleHandledRef.current = true;
     playCue();
     flashBlue();
 
@@ -98,14 +105,21 @@ export function usePomodoroTimer() {
 
     if (mode === "break" && lastBreakRef.current) {
       lastBreakRef.current = false;
-      clearTimer();
-      setMode("focus");
-      setStarted(false);
-      setRunning(false);
-      setTimeLeft(focusM * 60);
-      setFractional("0.00");
-      endRef.current = null;
-      persist({ mode: "focus", started: false, running: false, timeLeft: focusM * 60, endAt: null });
+      // Use the shared reset logic to ensure consistent state cleanup
+      reset();
+      setCompletedMessage("Successfully completed all cycles!");
+      // Try to notify the user via the Notifications API
+      try {
+        if (typeof window !== "undefined" && "Notification" in window) {
+          if (Notification.permission === "granted") {
+            new Notification("Pomodoro complete", { body: "Successfully completed all cycles!" });
+          } else if (Notification.permission !== "denied") {
+            Notification.requestPermission().then((perm) => {
+              if (perm === "granted") new Notification("Pomodoro complete", { body: "Successfully completed all cycles!" });
+            }).catch(() => {});
+          }
+        }
+      } catch {}
       return;
     }
 
@@ -120,12 +134,15 @@ export function usePomodoroTimer() {
     persist({ mode: nextMode, timeLeft: nextSeconds, endAt: endRef.current, started: true, running: true });
   };
 
-  useEffect(() => { finishCycleRef.current = finishCycle; });
-
   const startOrResume = () => {
     const seconds = started ? timeLeft : (mode === "focus" ? focusM : breakM) * 60;
     const a = audioRef.current;
-    if (a) { a.muted = true; a.play().then(() => { a.pause(); a.currentTime = 0; a.muted = false; }).catch(() => { a.muted = false; }); }
+    if (a) {
+      a.muted = true;
+      a.play().then(() => { a.pause(); a.currentTime = 0; a.muted = false; }).catch(() => { a.muted = false; });
+    }
+    cycleHandledRef.current = false;
+    setCompletedMessage("");
     if (!started) setStarted(true);
     setRunning(true);
     setTimeLeft(seconds);
@@ -147,7 +164,8 @@ export function usePomodoroTimer() {
   const reset = () => {
     clearTimer();
     endRef.current = null;
-    handledEndRef.current = null;
+    cycleHandledRef.current = false;
+    setCompletedMessage("");
     setMode("focus");
     setStarted(false);
     setRunning(false);
@@ -157,9 +175,24 @@ export function usePomodoroTimer() {
     persist({ mode: "focus", started: false, running: false, timeLeft: focusM * 60, endAt: null, cyclesRemaining: cyclesTarget });
   };
 
+  useEffect(() => { finishCycleRef.current = finishCycle; });
+  useEffect(() => { startOrResumeRef.current = startOrResume; });
+  useEffect(() => { pauseRef.current = pause; });
+  useEffect(() => { resetRef.current = reset; });
+  useEffect(() => { persistRef.current = persist; });
+  useEffect(() => {
+    onKeyRef.current = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "BUTTON" || t.isContentEditable)) return;
+      if (e.code === "Space") { e.preventDefault(); if (running) pauseRef.current(); else startOrResumeRef.current(); }
+      if (e.key.toLowerCase() === "r") resetRef.current();
+    };
+  });
+
   useEffect(() => {
     audioRef.current = new Audio(AUDIO_FILE);
     audioRef.current.preload = "auto";
+    try { audioCtxRef.current = new AudioContext(); } catch {}
     setTimeout(() => setHistory(loadHistory()), 0);
 
     const active = loadActive();
@@ -175,6 +208,7 @@ export function usePomodoroTimer() {
       setFocusM(f); setBreakM(b); setCyclesTarget(ct); setCyclesRemaining(cr); setMode(m);
       if (active.running && endAt && endAt > now()) {
         const rem = endAt - now();
+        cycleHandledRef.current = false;
         setStarted(true); setRunning(true); setTimeLeft(Math.ceil(rem / 1000));
         setFractional(((rem % 1000) / 1000).toFixed(2));
         endRef.current = endAt;
@@ -185,25 +219,19 @@ export function usePomodoroTimer() {
       }
       restoredRef.current = true;
     }, 0);
+    return () => { if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current); };
   }, []);
 
   useEffect(() => {
     if (!restoredRef.current) return;
-    persist();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusM, breakM, cyclesTarget, cyclesRemaining, mode, started, running, timeLeft]);
+    persistRef.current();
+  }, [focusM, breakM, cyclesTarget, cyclesRemaining, mode, started, running]);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === "INPUT" || t.isContentEditable)) return;
-      if (e.code === "Space") { e.preventDefault(); if (running) pause(); else startOrResume(); }
-      if (e.key.toLowerCase() === "r") reset();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [running, timeLeft, started, mode, cyclesRemaining]);
+    const handler = (e: KeyboardEvent) => onKeyRef.current(e);
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -227,16 +255,31 @@ export function usePomodoroTimer() {
     return () => clearInterval(id);
   }, []);
 
+  useEffect(() => {
+    if (!completedMessage) return;
+    const id = setTimeout(() => setCompletedMessage(""), 5000);
+    return () => clearTimeout(id);
+  }, [completedMessage]);
+
   const displayTime = !started && !running ? (mode === "focus" ? focusM : breakM) * 60 : timeLeft;
   const displayFraction = !started && !running ? "0.00" : fractional;
   const statusLabel = !started ? "Ready" : running ? (mode === "focus" ? "Focusing" : "Break") : "Paused";
 
+  const setFocusMWrapped = useCallback((v: number) => setFocusM(clamp(v, 1, 180)), []);
+  const setBreakMWrapped = useCallback((v: number) => setBreakM(clamp(v, 1, 60)), []);
+  const setCyclesTargetWrapped = useCallback((v: number) => {
+    const next = clamp(v, 1, 4);
+    setCyclesTarget(next);
+    setCyclesRemaining((prev) => Math.min(next, prev));
+  }, []);
+
   return {
     focusM, breakM, cyclesTarget, cyclesRemaining, mode, history, currentDateTime,
-    statusLabel, displayTime, displayFraction, started, running,
-    setFocusM: (v: number) => setFocusM(clamp(v, 1, 180)),
-    setBreakM: (v: number) => setBreakM(clamp(v, 1, 60)),
-    setCyclesTarget: (v: number) => { const next = clamp(v, 1, 4); setCyclesTarget(next); setCyclesRemaining((prev) => Math.min(next, prev)); },
+    statusLabel, displayTime, displayFraction, started, running, flashActive,
+    completedMessage, dismissCompleted: () => setCompletedMessage(""),
+    setFocusM: setFocusMWrapped,
+    setBreakM: setBreakMWrapped,
+    setCyclesTarget: setCyclesTargetWrapped,
     startOrResume, pause, reset,
   };
 }
