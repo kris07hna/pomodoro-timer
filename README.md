@@ -2,7 +2,7 @@
 
 Minimal Next.js Pomodoro timer with UI and history.
 
-![Pomodoro screenshot](public/pomodoro-screenshot.png)
+![Pomodoro screenshot](./public/public/Screenshot 2026-05-28 143844.png)
 
 Quick start:
 
